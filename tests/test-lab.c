@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdio.h>
+#include <string.h>
 #ifdef __APPLE__
 #include <sys/errno.h>
 #else
@@ -145,5 +147,99 @@ int main(void) {
   RUN_TEST(test_buddy_init);
   RUN_TEST(test_buddy_malloc_one_byte);
   RUN_TEST(test_buddy_malloc_one_large);
-return UNITY_END();
+  RUN_TEST(test_multiple_small_allocations);
+  RUN_TEST(test_double_free_protection);
+  RUN_TEST(test_null_pointer_free);
+  RUN_TEST(test_alloc_free_reverse_order);
+  RUN_TEST(test_stress_random_alloc_free);
+  return UNITY_END();
+}
+
+
+
+void test_multiple_small_allocations(void) {
+  fprintf(stderr, "->Testing multiple small allocations");
+  struct buddy_pool pool;
+  buddy_init(&pool, UINT64_C(1) << MIN_K);
+
+  void *a = buddy_malloc(&pool, 8);
+  void *b = buddy_malloc(&pool, 8);
+  void *c = buddy_malloc(&pool, 8);
+  void *d = buddy_malloc(&pool, 8);
+
+  assert(a != NULL && b != NULL && c != NULL && d != NULL);
+
+  buddy_free(&pool, a);
+  buddy_free(&pool, b);
+  buddy_free(&pool, c);
+  buddy_free(&pool, d);
+
+  check_buddy_pool_full(&pool);
+  buddy_destroy(&pool);
+}
+
+void test_double_free_protection(void) {
+  fprintf(stderr, "->Testing double free protection");
+  struct buddy_pool pool;
+  buddy_init(&pool, UINT64_C(1) << MIN_K);
+
+  void *mem = buddy_malloc(&pool, 32);
+  assert(mem != NULL);
+  buddy_free(&pool, mem);
+
+  // Double free: should not crash or corrupt pool
+  buddy_free(&pool, mem);
+
+  check_buddy_pool_full(&pool);
+  buddy_destroy(&pool);
+}
+
+void test_null_pointer_free(void) {
+  fprintf(stderr, "->Testing free of NULL");
+  struct buddy_pool pool;
+  buddy_init(&pool, UINT64_C(1) << MIN_K);
+
+  // Should safely do nothing
+  buddy_free(&pool, NULL);
+
+  check_buddy_pool_full(&pool);
+  buddy_destroy(&pool);
+}
+
+void test_alloc_free_reverse_order(void) {
+  fprintf(stderr, "->Testing free in reverse order");
+  struct buddy_pool pool;
+  buddy_init(&pool, UINT64_C(1) << MIN_K);
+
+  void *a = buddy_malloc(&pool, 64);
+  void *b = buddy_malloc(&pool, 64);
+  void *c = buddy_malloc(&pool, 64);
+
+  assert(a != NULL && b != NULL && c != NULL);
+
+  buddy_free(&pool, c);
+  buddy_free(&pool, b);
+  buddy_free(&pool, a);
+
+  check_buddy_pool_full(&pool);
+  buddy_destroy(&pool);
+}
+
+void test_stress_random_alloc_free(void) {
+  fprintf(stderr, "->Stress test with random allocations/frees");
+  struct buddy_pool pool;
+  buddy_init(&pool, UINT64_C(1) << MIN_K);
+  void *ptrs[100];
+
+  for (int i = 0; i < 100; ++i) {
+    size_t sz = (rand() % 64) + 1;
+    ptrs[i] = buddy_malloc(&pool, sz);
+  }
+
+  for (int i = 99; i >= 0; --i) {
+    if (ptrs[i]) buddy_free(&pool, ptrs[i]);
+  }
+
+  check_buddy_pool_full(&pool);
+  buddy_destroy(&pool);
 }

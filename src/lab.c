@@ -15,6 +15,8 @@
 #endif
 
 #include "lab.h"
+#include <errno.h>
+#include <string.h>
 
 #define handle_error_and_die(msg) \
     do                            \
@@ -29,37 +31,89 @@
  * @param bytes the number of bytes
  * @return size_t the K value that will fit bytes
  */
-size_t btok(size_t bytes)
-{
-    //DO NOT use math.pow
+size_t btok(size_t bytes) {
+    size_t k = SMALLEST_K;
+    size_t block_size = UINT64_C(1) << k;
+    while (block_size < bytes + sizeof(struct avail)) {
+        k++;
+        block_size = UINT64_C(1) << k;
+    }
+    return k;
 }
 
-struct avail *buddy_calc(struct buddy_pool *pool, struct avail *buddy)
-{
-
+struct avail *buddy_calc(struct buddy_pool *pool, struct avail *block) {
+    uintptr_t offset = (uintptr_t)block - (uintptr_t)pool->base;
+    uintptr_t buddy_offset = offset ^ (UINT64_C(1) << block->kval);
+    return (struct avail *)((uintptr_t)pool->base + buddy_offset);
 }
 
-void *buddy_malloc(struct buddy_pool *pool, size_t size)
-{
-
-    //get the kval for the requested size with enough room for the tag and kval fields
-
-    //R1 Find a block
-
-    //There was not enough memory to satisfy the request thus we need to set error and return NULL
-
-    //R2 Remove from list;
-
-    //R3 Split required?
-
-    //R4 Split the block
-
+static void remove_from_list(struct avail *block) {
+    block->next->prev = block->prev;
+    block->prev->next = block->next;
 }
 
-void buddy_free(struct buddy_pool *pool, void *ptr)
-{
-
+static void insert_into_list(struct avail *sentinel, struct avail *block) {
+    block->next = sentinel->next;
+    block->prev = sentinel;
+    sentinel->next->prev = block;
+    sentinel->next = block;
 }
+
+void *buddy_malloc(struct buddy_pool *pool, size_t size) {
+    if (!pool || size == 0) return NULL;
+    size_t k = btok(size);
+    if (k < SMALLEST_K) k = SMALLEST_K;
+    if (k > pool->kval_m) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    size_t i = k;
+    while (i <= pool->kval_m && pool->avail[i].next == &pool->avail[i]) {
+        i++;
+    }
+
+    if (i > pool->kval_m) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    struct avail *block = pool->avail[i].next;
+    remove_from_list(block);
+
+    while (i > k) {
+        i--;
+        uintptr_t buddy_offset = (uintptr_t)block + (UINT64_C(1) << i);
+        struct avail *buddy = (struct avail *)buddy_offset;
+        buddy->kval = i;
+        buddy->tag = BLOCK_AVAIL;
+        insert_into_list(&pool->avail[i], buddy);
+        block->kval = i;
+    }
+
+    block->tag = BLOCK_RESERVED;
+    return (void *)(block + 1);
+}
+
+void buddy_free(struct buddy_pool *pool, void *ptr) {
+    if (!ptr || !pool) return;
+
+    struct avail *block = ((struct avail *)ptr) - 1;
+    block->tag = BLOCK_AVAIL;
+
+    while (block->kval < pool->kval_m) {
+        struct avail *buddy = buddy_calc(pool, block);
+        if (buddy->tag != BLOCK_AVAIL || buddy->kval != block->kval) break;
+        remove_from_list(buddy);
+
+        if (buddy < block) block = buddy;
+        block->kval++;
+    }
+
+    insert_into_list(&pool->avail[block->kval], block);
+}
+
+
 
 /**
  * @brief This is a simple version of realloc.
