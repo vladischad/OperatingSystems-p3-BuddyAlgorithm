@@ -136,26 +136,6 @@ void test_buddy_init(void)
 }
 
 
-int main(void) {
-  time_t t;
-  unsigned seed = (unsigned)time(&t);
-  fprintf(stderr, "Random seed:%d\n", seed);
-  srand(seed);
-  printf("Running memory tests.\n");
-
-  UNITY_BEGIN();
-  RUN_TEST(test_buddy_init);
-  RUN_TEST(test_buddy_malloc_one_byte);
-  RUN_TEST(test_buddy_malloc_one_large);
-  RUN_TEST(test_multiple_small_allocations);
-  RUN_TEST(test_double_free_protection);
-  RUN_TEST(test_null_pointer_free);
-  RUN_TEST(test_alloc_free_reverse_order);
-  RUN_TEST(test_stress_random_alloc_free);
-  return UNITY_END();
-}
-
-
 
 void test_multiple_small_allocations(void) {
   fprintf(stderr, "->Testing multiple small allocations");
@@ -242,4 +222,25 @@ void test_stress_random_alloc_free(void) {
 
   check_buddy_pool_full(&pool);
   buddy_destroy(&pool);
+}
+
+
+
+int main(void) {
+  time_t t;
+  unsigned seed = (unsigned)time(&t);
+  fprintf(stderr, "Random seed:%d\n", seed);
+  srand(seed);
+  printf("Running memory tests.\n");
+
+  UNITY_BEGIN();
+  RUN_TEST(test_buddy_init);
+  RUN_TEST(test_buddy_malloc_one_byte);
+  RUN_TEST(test_buddy_malloc_one_large);
+  RUN_TEST(test_multiple_small_allocations);
+  RUN_TEST(test_double_free_protection);
+  RUN_TEST(test_null_pointer_free);
+  RUN_TEST(test_alloc_free_reverse_order);
+  RUN_TEST(test_stress_random_alloc_free);
+  return UNITY_END();
 }
